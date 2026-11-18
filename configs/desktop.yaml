@@ -1,7 +1,7 @@
-# 데스크탑 (RTX 4070 SUPER) 덮어쓰기. 코어 수에 맞게 n_envs 조정
+# 데스크탑 (RTX 4070 SUPER, 12스레드) 덮어쓰기. 실측 fps: 8개 2611 / 12개 3417 / 16개 3509
 ppo:
-  n_envs: 16
-  batch_size: 4096
+  n_envs: 12
+  batch_size: 6144    # 12 × n_steps(512) = 6144 와 나누어떨어지게
   device: auto
 train:
   max_hours: 0        # 0 = 시간 제한 없음

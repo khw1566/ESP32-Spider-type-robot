@@ -8,6 +8,7 @@ PPO(Stable-Baselines3)로 학습하는 시뮬레이션 환경입니다. 형상·
 
 ```bash
 pip install -r requirements.txt
+# GPU를 쓰려면 그다음 CUDA 빌드로 교체: pip install --force-reinstall --no-deps torch --index-url https://download.pytorch.org/whl/cu130
 python -m pytest -q tests                        # 동작 확인 (약 5초)
 python scripts/train.py --override configs/quick_test.yaml --tag quicktest   # 수 분짜리 시험 학습
 python scripts/train.py --tag main               # 본 학습 (일어서기 단계부터 커리큘럼 자동 진행)
@@ -126,7 +127,7 @@ Windows 학교 PC(재부팅 시 초기화)는 [USB 휴대형 환경](#windows-�
 
 1. 이 저장소를 USB에 복사 (예: `E:\ESP32-Spider-type-robot`)
 2. 집이나 데스크탑에서 한 번 `windows\setup_portable.bat` 실행 → `python\` 폴더에 Python 3.11 + 패키지 설치
-   (관리자 권한 불필요. GPU 버전 PyTorch가 필요하면 `setup_portable.bat -Cuda`, 약 2.5 GB)
+   (관리자 권한 불필요. GPU 버전 PyTorch가 필요하면 `setup_portable.bat -Cuda`, CUDA 13.0 빌드, 약 2.5 GB)
 3. 학교 PC에서 `windows\quick_test.bat` 으로 확인 후 `windows\train_school_pc.bat` 실행
 4. 7.5시간이 지나면 자동으로 `latest.zip` 저장 후 종료. 다음 세션은
    `windows\train_school_pc.bat runs\<이전 실행>\checkpoints\latest.zip` 으로 이어받기
