@@ -1,0 +1,13 @@
+mujoco>=3.2
+gymnasium>=1.0
+stable-baselines3>=2.4
+torch>=2.3
+numpy
+pandas
+matplotlib
+pyyaml
+tensorboard
+psutil
+imageio
+imageio-ffmpeg
+pytest

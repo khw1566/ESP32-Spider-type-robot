@@ -1,0 +1,250 @@
+# =====================================================================
+# ESP32 거미형 4족 로봇 - 기본 설정 파일
+# 모든 형상/구동/센서/보상/커리큘럼 변수를 여기서 관리한다.
+# 다른 설정 파일은 이 파일 위에 덮어쓰기(override)로 동작한다.
+#   예) python scripts/train.py --config configs/default.yaml --override configs/school_pc.yaml
+# 단위: 길이 m, 질량 kg, 각도 deg(별도 표기 없으면), 토크 N·m
+# =====================================================================
+
+robot:
+  # ---- 몸체 ----
+  body_size: [0.20, 0.20, 0.07]      # 가로(x, 전방), 세로(y), 높이(z). NEMA17(42x42x48) 4개 + 보드 배치 여유 포함
+  body_mass: 0.60                    # 프레임 + ESP32-P4 + 드라이버 8개 + 배선 (모터/감속기 제외)
+  com_offset: [0.0, 0.0, 0.0]        # 몸체 무게중심 오프셋 (CAD와 동기화)
+  hip_inset: 0.025                   # 고관절 축이 몸체 모서리에서 안쪽으로 들어온 거리
+  hip_z: 0.0                         # 고관절 높이 (몸체 중심 기준). 음수면 아래로 → 지상고 증가
+
+  # ---- 다리 (거미형: 고관절 수평 회전 + 무릎 상하) ----
+  link1_length: 0.08                 # 고관절 → 무릎 (수평 링크)
+  link2_length: 0.08                 # 무릎 → 발끝
+  link_radius: 0.012                 # 충돌용 캡슐 반경 (PLA 링크 두께 여유)
+  link1_mass: 0.04                   # PLA 링크
+  link2_mass: 0.04
+  foot_radius: 0.012                 # 발끝(고무캡) 반경
+  foot_friction: [1.0, 0.02, 0.002]  # 미끄럼, 비틀림, 구름 마찰
+
+  # ---- 관절 범위 (deg). 0° = 엎드린 자세(링크2가 수평으로 뻗음) ----
+  hip_range: [-40, 40]               # 고관절 수평 회전, 기본 방향은 대각선(45°) 바깥
+  knee_range: [-30, 120]             # 무릎, + 가 발끝을 아래로 (몸을 들어올림)
+
+  # ---- 액추에이터: NEMA17 17HS48 + 1:4 유성 감속기 ----
+  motor_mass: 0.36                   # 17HS48 계열 1개
+  gearbox_mass: 0.075                # 자작 감속기 1개 (50~100 g)
+  gear_ratio: 4.0
+  gear_efficiency: 0.8
+  motor_holding_torque: 0.44         # N·m (보수적 기본값). 출력 토크 = 0.44*4*0.8 = 1.41 N·m ≈ 14.4 kgf·cm
+  motor_max_rpm: 600                 # 이 속도에서 토크가 torque_at_max_speed 비율까지 떨어짐
+  torque_at_max_speed: 0.3           # 토크-속도 곡선: 최고속에서 정지토크 대비 비율 (선형 감소)
+  rotor_inertia: 6.8e-6              # kg·m² (모터 축). 관절 기준 반사 관성 = 이 값 * gear_ratio^2
+  joint_damping: 0.02                # N·m·s/rad (감속기 마찰 등)
+  joint_frictionloss: 0.02           # N·m
+  max_joint_speed: 6.0               # rad/s, 펌웨어 최고속 제한 (≈57 rpm, 모터 230 rpm)
+  max_joint_accel: 40.0              # rad/s², 펌웨어 가감속 제한 (사다리꼴 프로파일)
+  position_kp: 100.0                 # 위치 추종 강성 (스테퍼 유지 강성 근사)
+  position_kv: 0.15                  # 감쇠 (힘 한계를 함께 소모하므로 작게)
+  backlash_deg: [1.0, 2.0]           # 관절별 유격 (에피소드마다 이 범위에서 무작위)
+  step_loss: true                    # 탈조 모사 (토크 초과 시 명령각과 실제각 영구 오차 발생)
+  step_loss_threshold_deg: 2.0       # 토크 포화 후 추가 추종 오차가 이 값을 넘으면 그만큼 미끄러짐(탈조)
+  step_loss_easy_margin_deg: 6.0     # 랜덤화 수준 0일 때 추가 여유 (수준 1에서 0) → 초반 학습 완화
+
+sim:
+  control_hz: 30                     # 정책 제어 주기 (확정)
+  substeps: 12                       # 물리 서브스텝 (timestep = 1/(30*12) ≈ 2.78 ms, 10까지 안정 확인)
+  integrator: implicitfast
+  arena_size: 5.0                    # 정사각 경기장 한 변 (m)
+  wall_height: 0.4
+  floor_friction: [0.9, 0.02, 0.002]
+
+sensors:
+  # 거리 센서 (HC-SR04 / VL53L0X 공통 모델)
+  distance_max: 2.0                  # 유효거리 200 cm
+  distance_min: 0.02
+  distance_yaw_deg: [0, 45, -45]     # 수평 센서 3개 (전방 0°, 좌 +45°, 우 -45°)
+  down_pitch_deg: 45                 # 전방 하향 센서 하향각 (단차 감지)
+  sensor_height: 0.015               # 몸체 중심 위 장착 높이
+  cone_half_angle_deg: 7.5           # 빔 폭 모사: 중심 + 좌우 2개 광선 중 최솟값
+  update_period_steps: 2             # 쿨타임: 30 Hz 기준 2스텝(≈66 ms)마다 갱신
+  latency_steps: [0, 2]              # 측정 지연 (랜덤화 수준에 따라 범위 확대)
+  noise_std: 0.01                    # m
+  dropout_prob: 0.02                 # 측정 실패 → 최대거리로 읽힘
+  # IMU (MPU6050)
+  gyro_noise_std: 0.02               # rad/s
+  gravity_noise_std: 0.02            # 정규화 중력벡터 노이즈
+  gyro_bias_std: 0.01                # 에피소드별 바이어스
+  # 위치 추정 오차 (실물: 출발점 기준 IMU/보행 추정)
+  goal_noise_std: 0.03               # m
+
+obs:
+  history: 3                         # 최근 N 스텝 관측을 이어 붙임 (지연 대응)
+  goal_distance_clip: 5.0
+  use_clock: true                    # 보행 위상 클럭 sin/cos (실물에서도 계산 가능)
+  clock_hz: 1.5
+
+action:
+  mode: absolute                     # 목표각 = 기준자세 + scale * action
+  hip_scale_deg: 40
+  knee_scale_deg: 75
+  nominal_hip_deg: 0
+  nominal_knee_deg: 45               # 행동 0일 때의 무릎각 (엎드림 0°와 서기 90° 사이)
+  smoothing: 0.0                     # 1차 저역통과 (0=없음)
+
+network:
+  # Wi-Fi 통신 모사
+  latency_steps: [0, 1]              # 행동 지연 (랜덤화 수준에 따라 확대)
+  packet_loss: 0.02                  # 패킷 손실 시 이전 명령 유지
+
+randomization:                       # 값 * 커리큘럼 랜덤화 수준(0~1) 만큼 적용
+  body_mass_frac: 0.15
+  link_mass_frac: 0.2
+  com_offset: 0.015                  # m
+  friction: [0.5, 1.25]              # 수준 1에서의 마찰 배율 범위
+  torque_frac: 0.2                   # 모터 토크 ±20%
+  kp_frac: 0.2
+  extra_latency_steps: 1             # 수준 1에서 지연 +1
+  push_prob: 0.005                   # 매 스텝 외란 확률
+  push_force: 15.0                   # N
+
+termination:
+  flip_tilt_deg: 75                  # 이 각도 이상 기울면 뒤집힘 → 실패 종료
+  out_of_arena: true
+
+reward:                              # 기본 가중치 (단계별로 덮어씀)
+  progress: 8.0                      # 목표까지 거리 감소량 (m) * w
+  reach: 20.0                        # 목표 도달 보너스
+  heading: 0.1                       # 목표 방향 정렬 cos
+  upright: 0.3                       # 몸체 수직축 정렬
+  height: 0.0                        # 서기 높이 추종 (exp)
+  stand_bonus: 0.0                   # 서기 성공 유지 보너스
+  alive: 0.05
+  body_contact: -0.5                 # 몸체/링크가 바닥이나 장애물에 닿음
+  obstacle_contact: -1.0
+  energy: -0.002                     # |τ·ω| 합
+  torque: -0.002                     # τ² 합
+  action_rate: -0.02                 # 행동 변화량²
+  joint_limit: -0.5                  # 관절 한계 근접
+  feet_air_time: 0.0                 # 발 들기 보상 (보행 유도)
+  fall: -10.0                        # 뒤집힘 종료 패널티
+  stand_height: 0.085                # 서기 목표 몸체 높이 (m)
+
+curriculum:
+  window: 300                        # 승급 판단용 최근 에피소드 수
+  replay_prob: 0.15                  # 이전 단계 재학습 확률 (망각 방지)
+  ramp_episodes: 3000                # 단계 내 난이도(랜덤화 등)를 0→1로 올리는 에피소드 수
+  stages:
+    - name: stand_up                 # ⓪ 엎드린 0° 자세에서 일어서기 + 균형
+      episode_seconds: 6
+      goal: none
+      init_prone_prob: 1.0
+      randomization: [0.0, 0.2]
+      obstacles: [0, 0]
+      step_height: [0.0, 0.0]
+      promote_success: 0.85
+      reward: {progress: 0.0, reach: 0.0, height: 2.0, stand_bonus: 0.5, upright: 0.5, alive: 0.0}
+
+    - name: walk_forward             # ① 전방 직진 (목표가 정면 2 m)
+      episode_seconds: 20
+      goal: {mode: forward, distance: [2.0, 2.0]}
+      success_progress: 1.0          # 1 m 이상 전진하면 성공
+      init_prone_prob: 0.5
+      randomization: [0.1, 0.3]
+      obstacles: [0, 0]
+      step_height: [0.0, 0.0]
+      promote_success: 0.8
+      reward: {height: 0.5, feet_air_time: 0.5}
+
+    - name: goal_near                # ② 목표 방향 추종 (가까운 무작위 목표)
+      episode_seconds: 25
+      goal: {mode: random, distance: [1.0, 2.0]}
+      init_prone_prob: 0.5
+      randomization: [0.2, 0.4]
+      obstacles: [0, 0]
+      step_height: [0.0, 0.0]
+      promote_success: 0.8
+      reward: {height: 0.3, feet_air_time: 0.3}
+
+    - name: goal_far                 # ③ 목표 지점 도달 1~4 m
+      episode_seconds: 40
+      goal: {mode: random, distance: [1.0, 4.0]}
+      init_prone_prob: 0.7
+      randomization: [0.3, 0.5]
+      obstacles: [0, 0]
+      step_height: [0.0, 0.0]
+      promote_success: 0.8
+      reward: {height: 0.3, feet_air_time: 0.2}
+
+    - name: randomized               # ④ 지연·노이즈·질량 랜덤화 강화
+      episode_seconds: 40
+      goal: {mode: random, distance: [1.0, 4.0]}
+      init_prone_prob: 1.0
+      randomization: [0.5, 1.0]
+      obstacles: [0, 0]
+      step_height: [0.0, 0.0]
+      promote_success: 0.75
+      reward: {height: 0.3, feet_air_time: 0.2}
+
+    - name: obstacles                # ⑤ 장애물 회피 (상자벽·의자·드럼통)
+      episode_seconds: 45
+      goal: {mode: random, distance: [1.5, 4.0]}
+      init_prone_prob: 1.0
+      randomization: [0.8, 1.0]
+      obstacles: [1, 5]
+      step_height: [0.0, 0.0]
+      promote_success: 0.7
+      reward: {height: 0.2, feet_air_time: 0.2}
+
+    - name: steps                    # ⑥ 단차 극복 5 → 10 cm
+      episode_seconds: 45
+      goal: {mode: random, distance: [1.5, 4.0]}
+      init_prone_prob: 1.0
+      randomization: [0.8, 1.0]
+      obstacles: [0, 0]
+      step_height: [0.05, 0.10]      # 단계 진행도에 따라 하한→상한으로 상승
+      promote_success: 0.6
+      reward: {height: 0.2, feet_air_time: 0.2}
+
+    - name: mixed                    # ⑦ 장애물 + 단차 혼합 코스 (최종)
+      episode_seconds: 50
+      goal: {mode: random, distance: [1.0, 4.0]}
+      init_prone_prob: 1.0
+      randomization: [1.0, 1.0]
+      obstacles: [1, 5]
+      step_height: [0.05, 0.10]
+      promote_success: 1.01          # 마지막 단계 (승급 없음)
+      reward: {height: 0.2, feet_air_time: 0.2}
+
+arena:
+  goal_radius: 0.15                  # 도달 판정 반경 (확정)
+  margin: 0.35                       # 벽에서 띄우는 거리
+  obstacle_clearance: 0.45           # 출발점/목표 주변 장애물 금지 반경
+  box_wall: {length: [0.4, 1.2], thickness: [0.15, 0.35], height: [0.25, 0.5]}
+  drum: {radius: [0.15, 0.3], height: [0.4, 0.9]}
+  chair: {seat: [0.42, 0.42], seat_height: 0.45, leg_radius: 0.015}
+  step: {width: [1.2, 2.5], depth: [0.5, 1.2]}
+
+ppo:
+  n_envs: 16
+  n_steps: 512
+  batch_size: 4096
+  n_epochs: 5
+  learning_rate: 3.0e-4
+  lr_schedule: constant              # constant | linear
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.002
+  vf_coef: 0.5
+  max_grad_norm: 1.0
+  target_kl: 0.03
+  net_arch: {pi: [256, 256], vf: [256, 256]}
+  activation: elu
+  log_std_init: -0.5
+  normalize_obs: true
+  normalize_reward: true
+  device: auto                       # auto | cpu | cuda:0  (MLP 정책은 cpu가 더 빠른 경우가 많음)
+
+train:
+  total_timesteps: 200000000
+  max_hours: 7.5                     # 학교 PC 8시간 세션 → 여유 두고 자동 저장·종료
+  checkpoint_every: 2000000
+  log_every_rollouts: 1
+  seed: 0

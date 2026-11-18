@@ -1,0 +1,133 @@
+{
+ "mass_budget_kg": {
+  "body_frame_electronics": 0.6,
+  "hip_actuators(4)": 1.74,
+  "knee_actuators(4)": 1.74,
+  "link1(4)": 0.16,
+  "link2+foot(4)": 0.2,
+  "total": 4.44
+ },
+ "output_torque_Nm": 1.4080000000000001,
+ "output_torque_kgfcm": 14.35760427872923,
+ "stand_body_height_cm": 9.2,
+ "ground_clearance_cm": 5.699999999999999,
+ "max_step_note": "지상고보다 높은 단차는 몸체가 걸림 → 링크2 연장 또는 hip_z 음수(고관절 하향) 필요",
+ "analytic_knee_torque_4feet_max_Nm": 0.8711280000000001,
+ "analytic_knee_torque_3feet_max_Nm": 1.161504,
+ "torque_margin_3feet": 1.2122213957076342,
+ "sim_knee_torque_peak_Nm": 2.794741032162932,
+ "stand_trials": [
+  {
+   "ramp_s": 0.2,
+   "height_cm": 8.178273980698256,
+   "slip_deg": 27.42092074244937,
+   "stood": true,
+   "max_torque": 1.34243538773012,
+   "rand_level": 0.0
+  },
+  {
+   "ramp_s": 0.3333333333333333,
+   "height_cm": 8.447007288019327,
+   "slip_deg": 22.938283336605686,
+   "stood": true,
+   "max_torque": 1.343248153347007,
+   "rand_level": 0.0
+  },
+  {
+   "ramp_s": 0.5,
+   "height_cm": 9.041449681798444,
+   "slip_deg": 7.817028560173512,
+   "stood": true,
+   "max_torque": 1.3813496179189986,
+   "rand_level": 0.0
+  },
+  {
+   "ramp_s": 0.6666666666666666,
+   "height_cm": 9.121131527476525,
+   "slip_deg": 1.797564730224026,
+   "stood": true,
+   "max_torque": 1.352028135710157,
+   "rand_level": 0.0
+  },
+  {
+   "ramp_s": 1.0,
+   "height_cm": 9.128868746921263,
+   "slip_deg": 0.0,
+   "stood": true,
+   "max_torque": 1.378479559794817,
+   "rand_level": 0.0
+  },
+  {
+   "ramp_s": 1.5,
+   "height_cm": 9.12891644743609,
+   "slip_deg": 0.0,
+   "stood": true,
+   "max_torque": 1.407303274114984,
+   "rand_level": 0.0
+  },
+  {
+   "ramp_s": 2.0,
+   "height_cm": 9.128912033536428,
+   "slip_deg": 0.0,
+   "stood": true,
+   "max_torque": 1.3881982317527668,
+   "rand_level": 0.0
+  },
+  {
+   "ramp_s": 0.2,
+   "height_cm": 7.351495718881747,
+   "slip_deg": 46.10838146948238,
+   "stood": false,
+   "max_torque": 1.595971791719521,
+   "rand_level": 1.0
+  },
+  {
+   "ramp_s": 0.3333333333333333,
+   "height_cm": 7.742725257997374,
+   "slip_deg": 41.554569419803244,
+   "stood": false,
+   "max_torque": 1.5968995045408076,
+   "rand_level": 1.0
+  },
+  {
+   "ramp_s": 0.5,
+   "height_cm": 8.780502871736148,
+   "slip_deg": 23.32619641945742,
+   "stood": true,
+   "max_torque": 1.6424832843567603,
+   "rand_level": 1.0
+  },
+  {
+   "ramp_s": 0.6666666666666666,
+   "height_cm": 8.877132218177254,
+   "slip_deg": 17.339107254633163,
+   "stood": true,
+   "max_torque": 1.6206991398754826,
+   "rand_level": 1.0
+  },
+  {
+   "ramp_s": 1.0,
+   "height_cm": 9.047225362552384,
+   "slip_deg": 10.922627467810397,
+   "stood": true,
+   "max_torque": 1.6309310591071238,
+   "rand_level": 1.0
+  },
+  {
+   "ramp_s": 1.5,
+   "height_cm": 9.106260033830313,
+   "slip_deg": 4.118023986974251,
+   "stood": true,
+   "max_torque": 1.6248320738260011,
+   "rand_level": 1.0
+  },
+  {
+   "ramp_s": 2.0,
+   "height_cm": 9.113573439175356,
+   "slip_deg": 1.4991666758493398,
+   "stood": true,
+   "max_torque": 1.6435145892300487,
+   "rand_level": 1.0
+  }
+ ]
+}
