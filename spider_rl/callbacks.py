@@ -285,6 +285,8 @@ class CheckpointAndTimeLimitCallback(BaseCallback):
         if now - t_ref > 20:
             self.fps = (self.num_timesteps - n_ref) / (now - t_ref)
             self._fps_ref = (now, self.num_timesteps)
+        elif self.fps == 0.0 and el > 1:
+            self.fps = self.num_timesteps / el   # 짧은 실행에서도 값이 남도록 전체 평균
         remain = self.max_hours * 3600 - el if self.max_hours > 0 else None
         st = self.cur.state()
         stage_name = self.cur.stages[st["stage"]]["name"]

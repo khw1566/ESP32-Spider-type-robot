@@ -256,7 +256,7 @@ class Dashboard(tk.Tk):
         ttk.Button(top, text="목록 새로고침", command=self.refresh_runs).pack(side="left")
 
         body = ttk.Frame(self.tab_ctrl)
-        body.pack(fill="both", expand=True, padx=10, pady=4)
+        body.pack(fill="x", padx=10, pady=4)
         body.columnconfigure(0, weight=1)
         body.columnconfigure(1, weight=1)
 
@@ -495,6 +495,8 @@ class Dashboard(tk.Tk):
                 sub = df[[TS, col]].dropna()
                 if col == "curriculum/stage":
                     ax.step(sub[TS] / 1e6, sub[col], where="post", color=PALETTE[0])
+                    ax.set_ylim(-0.3, len(self.stage_names) - 0.7)
+                    ax.set_yticks(range(len(self.stage_names)))
                 else:
                     ax.plot(sub[TS] / 1e6, sub[col], color=PALETTE[0], lw=1.4)
         for ax in self.axes[3:]:
