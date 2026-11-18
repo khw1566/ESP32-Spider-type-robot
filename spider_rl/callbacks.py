@@ -177,20 +177,128 @@ class CurriculumLoggerCallback(BaseCallback):
 
 
 class CheckpointAndTimeLimitCallback(BaseCallback):
-    """주기적 체크포인트(모델+VecNormalize+커리큘럼 상태) 저장, 시간 제한 도달 시 저장 후 종료."""
+    """주기적 체크포인트(모델+VecNormalize+커리큘럼 상태) 저장, 시간 제한 도달 시 저장 후 종료.
+
+    관제 대시보드 연동 (실행 폴더의 두 파일)
+    - control.json (대시보드 → 학습): 학습 중 설정 변경. 몇 초마다 다시 읽는다.
+        {"max_hours": 7.5, "stop": false, "save_now": false, "ent_coef": 0.002, "learning_rate": 0.0003}
+        max_hours <= 0 이면 시간 제한 없음. stop=true 면 저장 후 종료. save_now=true 면 즉시 체크포인트.
+    - status.json (학습 → 대시보드): 진행 상태 (스텝, 경과/남은 시간, 종료 예정 시각, 단계, fps 등)
+    """
+
+    POLL_SEC = 3.0
 
     def __init__(self, run_dir: str, every: int, max_hours: float, curriculum: CurriculumLoggerCallback,
-                 verbose: int = 1):
+                 total_timesteps: int | None = None, verbose: int = 1):
         super().__init__(verbose)
+        self.run_dir = run_dir
         self.dir = os.path.join(run_dir, "checkpoints")
         os.makedirs(self.dir, exist_ok=True)
         self.every = every
-        self.max_sec = max_hours * 3600 if max_hours and max_hours > 0 else None
+        self.max_hours = float(max_hours or 0.0)
         self.cur = curriculum
+        self.total = total_timesteps
         self.t0 = time.time()
         self.last = 0
+        self.last_poll = 0.0
+        self.last_ctrl_mtime = None
+        self.state = "running"
         self.hist_path = os.path.join(run_dir, "checkpoints.csv")
+        self.ctrl_path = os.path.join(run_dir, "control.json")
+        self.status_path = os.path.join(run_dir, "status.json")
+        self.ctrl_log = os.path.join(run_dir, "control_events.csv")
+        self._fps_ref = (self.t0, 0)
+        self.fps = 0.0
 
+    # ------------------------------------------------------------------
+    def _on_training_start(self) -> None:
+        self.t0 = time.time()
+        self._fps_ref = (self.t0, self.num_timesteps)
+        ctrl = {"max_hours": self.max_hours, "stop": False, "save_now": False,
+                "ent_coef": float(self.model.ent_coef), "learning_rate": float(self.model.lr_schedule(1.0))}
+        self._write_json(self.ctrl_path, ctrl)
+        self.last_ctrl_mtime = os.path.getmtime(self.ctrl_path)
+        self._write_status()
+
+    @staticmethod
+    def _write_json(path, obj):
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(obj, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, path)
+
+    def _log_ctrl(self, key, old, new):
+        newf = not os.path.exists(self.ctrl_log)
+        with open(self.ctrl_log, "a", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            if newf:
+                w.writerow(["timesteps", "wall_time", "key", "old", "new"])
+            w.writerow([self.num_timesteps, round(time.time() - self.t0, 1), key, old, new])
+        if self.verbose:
+            print(f"[관제] {key}: {old} → {new}")
+
+    def _read_control(self):
+        try:
+            mt = os.path.getmtime(self.ctrl_path)
+        except OSError:
+            return
+        if mt == self.last_ctrl_mtime:
+            return
+        self.last_ctrl_mtime = mt
+        try:
+            with open(self.ctrl_path, encoding="utf-8") as f:
+                ctrl = json.load(f)
+        except (OSError, ValueError):
+            return   # 쓰는 중이면 다음에 다시 읽음
+        if "max_hours" in ctrl:
+            v = float(ctrl["max_hours"] or 0.0)
+            if abs(v - self.max_hours) > 1e-9:
+                self._log_ctrl("max_hours", self.max_hours, v)
+                self.max_hours = v
+        if "ent_coef" in ctrl and ctrl["ent_coef"] is not None:
+            v = float(ctrl["ent_coef"])
+            if abs(v - float(self.model.ent_coef)) > 1e-12:
+                self._log_ctrl("ent_coef", self.model.ent_coef, v)
+                self.model.ent_coef = v
+        if "learning_rate" in ctrl and ctrl["learning_rate"] is not None:
+            v = float(ctrl["learning_rate"])
+            old = float(self.model.lr_schedule(1.0))
+            if abs(v - old) > 1e-12:
+                self._log_ctrl("learning_rate", old, v)
+                self.model.learning_rate = v
+                self.model.lr_schedule = lambda _p, _v=v: _v
+        if ctrl.get("save_now"):
+            self._log_ctrl("save_now", False, True)
+            self.save(f"step_{self.num_timesteps:011d}")
+            self.save("latest")
+            ctrl["save_now"] = False
+            self._write_json(self.ctrl_path, ctrl)
+            self.last_ctrl_mtime = os.path.getmtime(self.ctrl_path)
+        if ctrl.get("stop"):
+            self._log_ctrl("stop", False, True)
+            self.state = "stopping"
+
+    def _write_status(self):
+        now = time.time()
+        el = now - self.t0
+        t_ref, n_ref = self._fps_ref
+        if now - t_ref > 20:
+            self.fps = (self.num_timesteps - n_ref) / (now - t_ref)
+            self._fps_ref = (now, self.num_timesteps)
+        remain = self.max_hours * 3600 - el if self.max_hours > 0 else None
+        st = self.cur.state()
+        stage_name = self.cur.stages[st["stage"]]["name"]
+        self._write_json(self.status_path, {
+            "state": self.state, "pid": os.getpid(), "updated": now, "start_time": self.t0,
+            "timesteps": int(self.num_timesteps), "total_timesteps": self.total,
+            "elapsed_sec": el, "max_hours": self.max_hours,
+            "remaining_sec": remain, "end_time": (now + remain) if remain is not None else None,
+            "fps": self.fps, "stage": st["stage"], "stage_name": stage_name, "stage_progress": st["progress"],
+            "success_rate_window": float(np.mean([e["success"] for e in self.cur.recent])) if self.cur.recent else None,
+            "ent_coef": float(self.model.ent_coef), "learning_rate": float(self.model.lr_schedule(1.0)),
+        })
+
+    # ------------------------------------------------------------------
     def save(self, tag: str):
         base = os.path.join(self.dir, tag)
         self.model.save(base + ".zip")
@@ -214,12 +322,25 @@ class CheckpointAndTimeLimitCallback(BaseCallback):
             self.last = self.num_timesteps
             self.save(f"step_{self.num_timesteps:011d}")
             self.save("latest")
-        if self.max_sec is not None and time.time() - self.t0 > self.max_sec:
-            print("[시간 제한] 최대 학습 시간 도달 → 저장 후 종료")
-            self.save("latest")
-            return False
+        now = time.time()
+        if now - self.last_poll >= self.POLL_SEC:
+            self.last_poll = now
+            self._read_control()
+            if self.state == "stopping":
+                print("[관제] 정지 요청 → 저장 후 종료")
+                self.save("latest")
+                return False
+            if self.max_hours > 0 and now - self.t0 > self.max_hours * 3600:
+                print("[시간 제한] 최대 학습 시간 도달 → 저장 후 종료")
+                self.state = "time_limit"
+                self.save("latest")
+                return False
+            self._write_status()
         return True
 
     def _on_training_end(self) -> None:
         self.save("final")
         self.save("latest")
+        if self.state == "running":
+            self.state = "finished"
+        self._write_status()

@@ -71,3 +71,18 @@ def test_distance_sensor_sees_obstacle():
     mujoco.mj_forward(env.model, env.data)
     d = env._measure_distances()
     assert 0.3 < d[0] < 0.6
+
+
+def test_dashboard_control_roundtrip(tmp_path):
+    from spider_rl import dashboard_backend as be
+    d = tmp_path / "run"
+    d.mkdir()
+    be.write_control(str(d), max_hours=7.5, stop=False)
+    be.write_control(str(d), max_hours=9.0)
+    ctrl = be.read_control(str(d))
+    assert ctrl["max_hours"] == 9.0 and ctrl["stop"] is False
+    cmd = be.build_train_command({"run_name": "x", "preset": "desktop", "n_envs": 12, "max_hours": 7.5,
+                                  "timesteps": 1e6, "stage": "3", "fixed_stage": True,
+                                  "sets": ["ppo.ent_coef=0.005", "# 주석", ""]}, runs_dir=str(tmp_path))
+    assert "--max-hours" in cmd and cmd[cmd.index("--max-hours") + 1] == "7.5"
+    assert cmd.count("--set") == 1 and "--fixed-stage" in cmd and str(tmp_path) in cmd

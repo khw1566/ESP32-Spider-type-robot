@@ -15,6 +15,9 @@ python scripts/train.py --tag main               # 본 학습 (일어서기 단�
 python scripts/plot_report.py runs/<실행폴더>      # 보고서용 그래프 PNG 일괄 생성
 ```
 
+학습 시작·정지, 시간 제한 변경, 실시간 그래프는 **관제 대시보드**에서 할 수 있습니다:
+`python scripts/dashboard.py` (Windows: `windows\dashboard.bat`).
+
 Windows 학교 PC(재부팅 시 초기화)는 [USB 휴대형 환경](#windows-학교-pc-usb-휴대형-환경)을 참고하세요.
 
 ## 구성
@@ -31,6 +34,7 @@ Windows 학교 PC(재부팅 시 초기화)는 [USB 휴대형 환경](#windows-�
 | `scripts/evaluate.py` | 정책 평가 + 보행 패턴·관절 궤적·토크-속도·궤적 그래프 + 영상 |
 | `scripts/plot_report.py` | 학습 로그 → 보고서 그래프 30여 종, 여러 실행 비교 |
 | `scripts/analyze_robot.py` | 설계 검토: 질량 예산, 지상고, 무릎 토크 여유, 일어서기 속도별 탈조 |
+| `scripts/dashboard.py` | 학습 관제 GUI: 학습 시작·이어받기, 실시간 상태, 학습 중 설정 변경, 실시간 그래프 |
 | `scripts/view_model.py` | MuJoCo 뷰어로 모델·정책 확인, MJCF 내보내기 |
 | `windows/*.bat` | 휴대형 Python 설치, 학습, TensorBoard, 그래프 실행용 배치 파일 |
 | `docs/robot_analysis/` | `analyze_robot.py` 결과 (토크 표, 그래프) |
@@ -93,6 +97,20 @@ Windows 학교 PC(재부팅 시 초기화)는 [USB 휴대형 환경](#windows-�
 - 단계 내 진행도(0→1, 3000 에피소드)에 따라 랜덤화 수준·장애물 수·단차 높이가 점진적으로 올라감
 - 이전 단계 에피소드를 15% 확률로 섞어 망각 방지
 - 보상 가중치는 `reward:` 기본값 위에 단계별 `reward:` 로 덮어씀
+
+## 학습 관제 대시보드
+
+`python scripts/dashboard.py` (Windows: `windows\dashboard.bat` 더블클릭). 입력 칸마다 마우스를 올리면 설명이 나옵니다.
+
+| 탭 | 기능 |
+|---|---|
+| 학습 시작 | PC 프리셋, 병렬 환경 수, **시간 제한**, 총 스텝, 시작 단계·단계 고정, 이어받을 체크포인트(최근 실행 자동 선택), 추가 설정(`키=값`) |
+| 실시간 관제 | 상태·단계·성공률·스텝·속도·경과/남은 시간·종료 예정 시각, 학습 로그. **학습 중에 시간 제한(+1/-1시간), 엔트로피 계수, 학습률 변경**, 지금 저장, 저장 후 정지 |
+| 그래프 | 성공률·보상·단계·엔트로피·보상 항목·FPS 실시간 그래프(15초 갱신), 보고서용 그래프 전체 생성 |
+
+학습은 대시보드와 별개 프로세스라 대시보드를 닫아도 계속되고, 다시 열면 이어서 관제합니다.
+학습과는 실행 폴더의 `control.json`(대시보드 → 학습, 3초마다 확인)과 `status.json`(학습 → 대시보드)으로 통신하며,
+학습 중 바꾼 설정은 `control_events.csv` 에 기록됩니다(보고서에 '설정 변경 시점' 표시용).
 
 ## 로그와 보고서 그래프
 

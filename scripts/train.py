@@ -53,6 +53,7 @@ def main():
     ap.add_argument("--override", action="append", default=[], help="덮어쓸 설정 파일 (여러 번 가능)")
     ap.add_argument("--set", action="append", default=[], help="개별 설정 a.b.c=값 (여러 번 가능)")
     ap.add_argument("--tag", default="", help="실행 이름 꼬리표")
+    ap.add_argument("--run-name", default=None, help="실행 폴더 이름을 직접 지정 (관제 대시보드가 사용)")
     ap.add_argument("--runs-dir", default=os.path.join(ROOT, "runs"))
     ap.add_argument("--resume", default=None, help="이어받을 체크포인트 .zip")
     ap.add_argument("--stage", type=int, default=None, help="시작 커리큘럼 단계")
@@ -74,7 +75,7 @@ def main():
 
     # ---- 실행 폴더 ----
     host = socket.gethostname().replace(" ", "_")
-    name = time.strftime("%Y%m%d-%H%M%S") + f"_{host}" + (f"_{args.tag}" if args.tag else "")
+    name = args.run_name or (time.strftime("%Y%m%d-%H%M%S") + f"_{host}" + (f"_{args.tag}" if args.tag else ""))
     run_dir = os.path.join(args.runs_dir, name)
     os.makedirs(run_dir, exist_ok=True)
     save_config(cfg, os.path.join(run_dir, "config.yaml"))
@@ -132,7 +133,7 @@ def main():
     model.set_logger(configure(run_dir, ["stdout", "csv", "tensorboard"]))
 
     cur_cb = CurriculumLoggerCallback(run_dir, cfg, start_stage, start_prog, stage_eps, args.fixed_stage)
-    ck_cb = CheckpointAndTimeLimitCallback(run_dir, tc["checkpoint_every"], max_hours, cur_cb)
+    ck_cb = CheckpointAndTimeLimitCallback(run_dir, tc["checkpoint_every"], max_hours, cur_cb, total)
     print(f"[학습 시작] run_dir={run_dir}  envs={n_envs}  device={device}  stage={start_stage}")
     try:
         model.learn(total_timesteps=total, callback=CallbackList([cur_cb, ck_cb]),
@@ -140,6 +141,8 @@ def main():
     except KeyboardInterrupt:
         print("[중단] Ctrl+C → 저장합니다")
         ck_cb.save("latest")
+        ck_cb.state = "interrupted"
+        ck_cb._write_status()
     finally:
         venv.close()
     print(f"[완료] 결과: {run_dir}\n  그래프: python scripts/plot_report.py {run_dir}")
