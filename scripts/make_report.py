@@ -102,8 +102,15 @@ def render_scenes(rec, width=480, height=300):
         frames.append((f"{name} (t={i * dt:.1f}s)", img_b64(r.render())))
     top = mujoco.MjvCamera()
     top.type = mujoco.mjtCamera.mjCAMERA_FREE
-    top.lookat[:] = [0, 0, 0]
-    top.distance, top.elevation, top.azimuth = 6.2, -89.9, 90
+    # 출발점·목표·이동 궤적이 모두 들어오도록 확대 (최소 1.5 m 범위)
+    pts_xy = [rec["qpos"][:, :2]]
+    if rec.get("goal") is not None:
+        pts_xy.append(np.asarray(rec["goal"])[None])
+    allp = np.vstack(pts_xy)
+    lo, hi = allp.min(0) - 0.4, allp.max(0) + 0.4
+    span = max(1.5, float((hi - lo).max()))
+    top.lookat[:] = [*(lo + hi) / 2, 0]
+    top.distance, top.elevation, top.azimuth = span * 1.35, -89.9, 90
     r2 = mujoco.Renderer(m, height=480, width=480)
     d.qpos[:] = rec["qpos"][-1]
     mujoco.mj_forward(m, d)
@@ -147,11 +154,12 @@ def episode_charts(rec):
     fig, axes = plt.subplots(1, 2, figsize=(6.4, 2.4), sharex=True)
     q = np.degrees(s["q"])
     for j, leg in enumerate(LEG_NAMES):
-        axes[0].plot(t, q[:, 2 * j], color=PALETTE[j], lw=1.1, label=leg)
+        axes[0].plot(t, q[:, 2 * j], color=PALETTE[j], lw=1.0, label=leg)
         axes[1].plot(t, q[:, 2 * j + 1], color=PALETTE[j], lw=1.1)
     axes[0].set_title(L("고관절 각도 (deg)", "hip (deg)"), fontsize=9)
     axes[1].set_title(L("무릎 각도 (deg)", "knee (deg)"), fontsize=9)
-    axes[0].legend(fontsize=6, ncol=2)
+    fig.legend(*axes[0].get_legend_handles_labels(), loc="upper center", ncol=4, fontsize=7,
+               bbox_to_anchor=(0.5, 1.02))
     for ax in axes:
         ax.tick_params(labelsize=7)
     out["joints"] = fig_b64(fig)

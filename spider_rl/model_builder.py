@@ -164,12 +164,12 @@ def build_mjcf(cfg: dict) -> str:
   <size memory="20M"/>
   <visual>
     <global offwidth="1280" offheight="720"/>
-    <headlight ambient="0.35 0.35 0.35" diffuse="0.45 0.45 0.45" specular="0.1 0.1 0.1"/>
+    <headlight ambient="0.35 0.35 0.35" diffuse="0.35 0.35 0.35" specular="0.0 0.0 0.0"/>
     <quality shadowsize="2048"/>
   </visual>
   <asset>
     <texture name="grid" type="2d" builtin="checker" rgb1="0.82 0.82 0.80" rgb2="0.70 0.70 0.68" width="512" height="512"/>
-    <material name="grid" texture="grid" texrepeat="10 10" reflectance="0.05"/>
+    <material name="grid" texture="grid" texrepeat="10 10" reflectance="0.0" specular="0.1" shininess="0.1"/>
     <texture name="sky" type="skybox" builtin="gradient" rgb1="0.6 0.75 0.9" rgb2="0.1 0.1 0.15" width="256" height="256"/>
   </asset>
   <worldbody>

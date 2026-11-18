@@ -157,7 +157,7 @@ def play_replays(files: list[str], start_paused=False):
         apply_layout(m, rec["layout"])
 
     apply_layout(m, rec["layout"])
-    with mujoco.viewer.launch_passive(m, d, key_callback=keys) as viewer:
+    with mujoco.viewer.launch_passive(m, d, key_callback=keys, show_left_ui=False, show_right_ui=False) as viewer:
         set_camera(viewer, m, 0)
         frame, acc, last = 0, 0.0, time.time()
         while viewer.is_running():
@@ -236,7 +236,7 @@ def live(args):
     keys = Keys()
     seed = args.seed
 
-    with mujoco.viewer.launch_passive(env.model, env.data, key_callback=keys) as viewer:
+    with mujoco.viewer.launch_passive(env.model, env.data, key_callback=keys, show_left_ui=False, show_right_ui=False) as viewer:
         set_camera(viewer, env.model, 0)
         while viewer.is_running():
             # 한 에피소드 실행: 정책·물리 계산은 30 Hz 실시간(×속도)으로
@@ -311,7 +311,7 @@ def live(args):
 # ======================================================================
 # 영상 내보내기
 # ======================================================================
-def export_video(path, out, camera="track", width=960, height=540, speed=1.0):
+def export_video(path, out, camera="track", width=960, height=544, speed=1.0):
     import imageio
     rec = load_replay(path)
     env = SpiderEnv(rec["config"])
@@ -325,7 +325,7 @@ def export_video(path, out, camera="track", width=960, height=540, speed=1.0):
         cam.type = mujoco.mjtCamera.mjCAMERA_FREE
         cam.lookat[:] = [0, 0, 0]
         cam.distance, cam.elevation, cam.azimuth = 7.0, -89, 90
-    with imageio.get_writer(out, fps=fps) as w:
+    with imageio.get_writer(out, fps=fps, macro_block_size=1) as w:
         for q in rec["qpos"]:
             d.qpos[:] = q
             mujoco.mj_forward(m, d)
