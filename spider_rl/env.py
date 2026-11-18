@@ -429,12 +429,13 @@ class SpiderEnv(gym.Env):
         r["action_rate"] = w["action_rate"] * float(np.sum((action - self.prev_action) ** 2))
         q = d.qpos[self.jnt_qadr]
         mid, hr = (self.j_hi + self.j_lo) / 2, (self.j_hi - self.j_lo) / 2
-        r["joint_limit"] = w["joint_limit"] * float(np.sum(np.clip(np.abs(q - mid) / hr - 0.92, 0, None) / 0.08))
+        r["joint_limit"] = w["joint_limit"] * float(np.sum(np.clip(np.abs(q - mid) / hr - 0.95, 0, None) / 0.05))
 
         dist = 0.0
         if self.goal is not None:
             dist = self._goal_dist()
-            r["progress"] = w["progress"] * (self.prev_dist - dist)
+            # 목표 방향 속도 (m/s) 기준: 걷기 0.1 m/s 정도에서도 자세 보상과 비슷한 크기가 되도록
+            r["progress"] = w["progress"] * (self.prev_dist - dist) / self.dt_ctrl
             self.prev_dist = dist
             self.min_dist = min(self.min_dist, dist)
             gvec = self.goal - pos[0:2]
@@ -497,7 +498,7 @@ class SpiderEnv(gym.Env):
                 "target": self.target.copy(), "torque": d.actuator_force.copy(),
                 "qvel": d.qvel[self.jnt_dadr].copy(), "contacts": contacts.copy(),
                 "dists": self.dist_queue[0].copy(), "goal_dist": dist, "reward": dict(r),
-                "energy": energy, "action": action.copy(),
+                "energy": energy, "action": action.copy(), "qpos": d.qpos.copy(),
             })
 
         info = {"stage": p["stage"]}

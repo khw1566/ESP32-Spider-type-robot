@@ -4,6 +4,8 @@ from __future__ import annotations
 import csv
 import json
 import os
+import subprocess
+import sys
 import time
 from collections import defaultdict, deque
 
@@ -36,8 +38,9 @@ class CurriculumLoggerCallback(BaseCallback):
     """
 
     def __init__(self, run_dir: str, cfg: dict, start_stage: int = 0, start_progress: float = 0.0,
-                 stage_episodes: int = 0, fixed_stage: bool = False, verbose: int = 1):
+                 stage_episodes: int = 0, fixed_stage: bool = False, total_episodes: int = 0, verbose: int = 1):
         super().__init__(verbose)
+        self.total_episodes = total_episodes
         self.run_dir = run_dir
         self.cfg = cfg
         cur = cfg["curriculum"]
@@ -86,6 +89,7 @@ class CurriculumLoggerCallback(BaseCallback):
                        cur_stage=self.stage)
             self.ep_writer.writerow(row)
             self.buffer.append(st)
+            self.total_episodes += 1
             self.recent_all[st["stage"]].append(st)
             if st["stage"] == self.stage:
                 self.recent.append(st)
@@ -167,7 +171,7 @@ class CurriculumLoggerCallback(BaseCallback):
 
     def state(self) -> dict:
         return {"stage": self.stage, "progress": self.progress, "stage_episodes": self.stage_episodes,
-                "timesteps": int(self.num_timesteps)}
+                "timesteps": int(self.num_timesteps), "total_episodes": int(self.total_episodes)}
 
     def _on_training_end(self) -> None:
         self.ev_writer.writerow([self.num_timesteps, round(time.time() - self.t0, 1), "end", self.stage,
@@ -209,12 +213,23 @@ class CheckpointAndTimeLimitCallback(BaseCallback):
         self.ctrl_log = os.path.join(run_dir, "control_events.csv")
         self._fps_ref = (self.t0, 0)
         self.fps = 0.0
+        tc = curriculum.cfg.get("train", {})
+        self.report_every = int(tc.get("report_every_episodes", 0) or 0)
+        self.report_min_interval = float(tc.get("report_min_interval_sec", 120))
+        self.report_idx = len([f for f in os.listdir(os.path.join(run_dir, "reports"))
+                               if f.startswith("report_") and f.endswith(".html")]) \
+            if os.path.isdir(os.path.join(run_dir, "reports")) else 0
+        self.last_report_ep = curriculum.total_episodes
+        self.last_report_t = 0.0
+        self.report_now = False
+        self._rec_env = None
 
     # ------------------------------------------------------------------
     def _on_training_start(self) -> None:
         self.t0 = time.time()
         self._fps_ref = (self.t0, self.num_timesteps)
         ctrl = {"max_hours": self.max_hours, "stop": False, "save_now": False,
+                "report_every_episodes": self.report_every, "report_now": False,
                 "ent_coef": float(self.model.ent_coef), "learning_rate": float(self.model.lr_schedule(1.0))}
         self._write_json(self.ctrl_path, ctrl)
         self.last_ctrl_mtime = os.path.getmtime(self.ctrl_path)
@@ -267,6 +282,17 @@ class CheckpointAndTimeLimitCallback(BaseCallback):
                 self._log_ctrl("learning_rate", old, v)
                 self.model.learning_rate = v
                 self.model.lr_schedule = lambda _p, _v=v: _v
+        if "report_every_episodes" in ctrl and ctrl["report_every_episodes"] is not None:
+            v = int(ctrl["report_every_episodes"])
+            if v != self.report_every:
+                self._log_ctrl("report_every_episodes", self.report_every, v)
+                self.report_every = v
+        if ctrl.get("report_now"):
+            self._log_ctrl("report_now", False, True)
+            self.report_now = True
+            ctrl["report_now"] = False
+            self._write_json(self.ctrl_path, ctrl)
+            self.last_ctrl_mtime = os.path.getmtime(self.ctrl_path)
         if ctrl.get("save_now"):
             self._log_ctrl("save_now", False, True)
             self.save(f"step_{self.num_timesteps:011d}")
@@ -298,7 +324,68 @@ class CheckpointAndTimeLimitCallback(BaseCallback):
             "fps": self.fps, "stage": st["stage"], "stage_name": stage_name, "stage_progress": st["progress"],
             "success_rate_window": float(np.mean([e["success"] for e in self.cur.recent])) if self.cur.recent else None,
             "ent_coef": float(self.model.ent_coef), "learning_rate": float(self.model.lr_schedule(1.0)),
+            "total_episodes": int(self.cur.total_episodes), "report_every_episodes": self.report_every,
+            "reports": self.report_idx,
+            "next_report_at": (self.last_report_ep + self.report_every) if self.report_every > 0 else None,
         })
+
+    # ------------------------------------------------------------------
+    # 자동 보고서: N판마다 현재 정책으로 1판 3D 녹화 + 체크포인트 → 별도 프로세스에서 HTML 보고서 생성
+    # ------------------------------------------------------------------
+    def _record_replay(self, idx: int) -> str | None:
+        from .env import SpiderEnv
+        from .replay import record_episode, replay_name, save_replay
+        cfg = self.cur.cfg
+        if self._rec_env is None:
+            self._rec_env = SpiderEnv(cfg, record=True, fixed_stage=True)
+        venv = self.model.get_vec_normalize_env()
+        model = self.model
+
+        def policy(obs):
+            o = venv.normalize_obs(obs[None]) if venv is not None else obs[None]
+            a, _ = model.predict(o, deterministic=True)
+            return a[0]
+        tag = f"report_{idx:04d}"
+        self.save(tag)
+        seed = 100000 + idx
+        st = self.cur.state()
+        rec = record_episode(self._rec_env, policy, seed, st["stage"], st["progress"],
+                             meta={"policy": "model", "checkpoint": os.path.abspath(os.path.join(self.dir, tag + ".zip")),
+                                   "timesteps": int(self.num_timesteps), "report": idx})
+        return save_replay(rec, os.path.join(self.run_dir, "replays", replay_name(st["stage"], seed, tag)))
+
+    def _maybe_report(self):
+        n = self.cur.total_episodes
+        due = self.report_every > 0 and n - self.last_report_ep >= self.report_every \
+            and time.time() - self.last_report_t >= self.report_min_interval
+        if not (due or self.report_now):
+            return
+        self.report_now = False
+        self.report_idx += 1
+        idx = self.report_idx
+        self.last_report_ep = n
+        self.last_report_t = time.time()
+        try:
+            rp = self._record_replay(idx)
+        except Exception as ex:  # noqa: BLE001  (녹화 실패해도 학습은 계속)
+            print(f"[보고서] 3D 녹화 실패: {ex}")
+            rp = None
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cmd = [sys.executable, os.path.join(root, "scripts", "make_report.py"), self.run_dir, "--index", str(idx),
+               "--episodes", str(n), "--timesteps", str(int(self.num_timesteps))]
+        if rp:
+            cmd += ["--replay", rp]
+        os.makedirs(os.path.join(self.run_dir, "reports"), exist_ok=True)
+        log = open(os.path.join(self.run_dir, "reports", "report_build.log"), "a", encoding="utf-8")
+        kw = dict(cwd=root, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                  env=dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1"))
+        if os.name == "nt":
+            kw["creationflags"] = subprocess.CREATE_NO_WINDOW
+        try:
+            subprocess.Popen(cmd, **kw)
+            print(f"[보고서] #{idx} 생성 시작 ({n}판, {self.num_timesteps:,} 스텝)")
+        except OSError as ex:
+            print(f"[보고서] 생성 프로세스 실행 실패: {ex}")
 
     # ------------------------------------------------------------------
     def save(self, tag: str):
@@ -332,6 +419,7 @@ class CheckpointAndTimeLimitCallback(BaseCallback):
                 print("[관제] 정지 요청 → 저장 후 종료")
                 self.save("latest")
                 return False
+            self._maybe_report()
             if self.max_hours > 0 and now - self.t0 > self.max_hours * 3600:
                 print("[시간 제한] 최대 학습 시간 도달 → 저장 후 종료")
                 self.state = "time_limit"
@@ -343,6 +431,10 @@ class CheckpointAndTimeLimitCallback(BaseCallback):
     def _on_training_end(self) -> None:
         self.save("final")
         self.save("latest")
+        if self.report_every > 0:      # 마지막 보고서
+            self.report_now = True
+            self.report_min_interval = 0
+            self._maybe_report()
         if self.state == "running":
             self.state = "finished"
         self._write_status()

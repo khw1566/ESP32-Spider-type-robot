@@ -164,6 +164,7 @@ def build_mjcf(cfg: dict) -> str:
   <size memory="20M"/>
   <visual>
     <global offwidth="1280" offheight="720"/>
+    <headlight ambient="0.35 0.35 0.35" diffuse="0.45 0.45 0.45" specular="0.1 0.1 0.1"/>
     <quality shadowsize="2048"/>
   </visual>
   <asset>
@@ -172,7 +173,7 @@ def build_mjcf(cfg: dict) -> str:
     <texture name="sky" type="skybox" builtin="gradient" rgb1="0.6 0.75 0.9" rgb2="0.1 0.1 0.15" width="256" height="256"/>
   </asset>
   <worldbody>
-    <light pos="0 0 4" dir="0 0 -1" directional="true" diffuse="0.8 0.8 0.8"/>
+    <light pos="1.5 -1.5 4" dir="-0.3 0.3 -1" directional="true" diffuse="0.55 0.55 0.55" castshadow="true"/>
     <camera name="top" pos="0 0 7.5" xyaxes="1 0 0 0 1 0"/>
     <geom name="floor" type="plane" size="{half + 1} {half + 1} 0.1" material="grid"
           friction="{_f(*sim['floor_friction'])}" {WORLD_GEOM}/>

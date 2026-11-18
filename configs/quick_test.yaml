@@ -7,3 +7,5 @@ train:
   total_timesteps: 30000
   checkpoint_every: 10000
   max_hours: 0.2
+  report_every_episodes: 150
+  report_min_interval_sec: 20

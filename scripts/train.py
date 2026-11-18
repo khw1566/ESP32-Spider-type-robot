@@ -81,13 +81,14 @@ def main():
     save_config(cfg, os.path.join(run_dir, "config.yaml"))
 
     # ---- 커리큘럼 시작점 ----
-    start_stage, start_prog, stage_eps = 0, 0.0, 0
+    start_stage, start_prog, stage_eps, total_eps = 0, 0.0, 0, 0
     if args.resume:
         cj = args.resume.replace(".zip", "_curriculum.json")
         if os.path.exists(cj):
             with open(cj, encoding="utf-8") as f:
                 st = json.load(f)
             start_stage, start_prog, stage_eps = st["stage"], st["progress"], st["stage_episodes"]
+            total_eps = st.get("total_episodes", 0)
     if args.stage is not None:
         start_stage, start_prog, stage_eps = args.stage, 0.0, 0
 
@@ -132,7 +133,7 @@ def main():
                     policy_kwargs=policy_kwargs, device=device, seed=seed, verbose=0)
     model.set_logger(configure(run_dir, ["stdout", "csv", "tensorboard"]))
 
-    cur_cb = CurriculumLoggerCallback(run_dir, cfg, start_stage, start_prog, stage_eps, args.fixed_stage)
+    cur_cb = CurriculumLoggerCallback(run_dir, cfg, start_stage, start_prog, stage_eps, args.fixed_stage, total_eps)
     ck_cb = CheckpointAndTimeLimitCallback(run_dir, tc["checkpoint_every"], max_hours, cur_cb, total)
     print(f"[학습 시작] run_dir={run_dir}  envs={n_envs}  device={device}  stage={start_stage}")
     try:

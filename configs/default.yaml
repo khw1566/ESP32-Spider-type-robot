@@ -109,7 +109,7 @@ termination:
   out_of_arena: true
 
 reward:                              # 기본 가중치 (단계별로 덮어씀)
-  progress: 8.0                      # 목표까지 거리 감소량 (m) * w
+  progress: 3.0                      # 목표 방향 속도 (m/s) * w  (0.1 m/s → 0.3/스텝)
   reach: 20.0                        # 목표 도달 보너스
   heading: 0.1                       # 목표 방향 정렬 cos
   upright: 0.3                       # 몸체 수직축 정렬
@@ -121,7 +121,7 @@ reward:                              # 기본 가중치 (단계별로 덮어씀)
   energy: -0.002                     # |τ·ω| 합
   torque: -0.002                     # τ² 합
   action_rate: -0.02                 # 행동 변화량²
-  joint_limit: -0.5                  # 관절 한계 근접
+  joint_limit: -0.05                 # 관절 한계 95% 이상 근접 (행동 ±1이 한계와 같아 작게)
   feet_air_time: 0.0                 # 발 들기 보상 (보행 유도)
   fall: -10.0                        # 뒤집힘 종료 패널티
   stand_height: 0.085                # 서기 목표 몸체 높이 (m)
@@ -248,3 +248,5 @@ train:
   checkpoint_every: 2000000
   log_every_rollouts: 1
   seed: 0
+  report_every_episodes: 5000        # N판(에피소드)마다 자동 보고서 + 3D 녹화 (0=끔). 대시보드에서 학습 중 변경 가능
+  report_min_interval_sec: 120       # 보고서 최소 간격 (초반 짧은 에피소드에서 너무 잦지 않게)

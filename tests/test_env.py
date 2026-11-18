@@ -86,3 +86,14 @@ def test_dashboard_control_roundtrip(tmp_path):
                                   "sets": ["ppo.ent_coef=0.005", "# 주석", ""]}, runs_dir=str(tmp_path))
     assert "--max-hours" in cmd and cmd[cmd.index("--max-hours") + 1] == "7.5"
     assert cmd.count("--set") == 1 and "--fixed-stage" in cmd and str(tmp_path) in cmd
+
+
+def test_replay_save_load_and_exact_reproduce(tmp_path):
+    from spider_rl.replay import load_replay, record_episode, reproduce, save_replay, scripted_policy
+    env = SpiderEnv(stage=0, record=True, fixed_stage=True)
+    rec = record_episode(env, scripted_policy("stand", env), seed=3, stage=0, meta={"policy": "stand"})
+    p = save_replay(rec, str(tmp_path / "ep.npz"))
+    r2 = load_replay(p)
+    assert r2["qpos"].shape == rec["qpos"].shape and r2["meta"]["seed"] == 3
+    out = reproduce(r2)
+    assert out["same_length"] and out["max_qpos_error"] < 1e-9

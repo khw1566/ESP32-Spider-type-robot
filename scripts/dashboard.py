@@ -96,13 +96,16 @@ class Dashboard(tk.Tk):
         self.tab_start = ttk.Frame(nb)
         self.tab_ctrl = ttk.Frame(nb)
         self.tab_graph = ttk.Frame(nb)
+        self.tab_view = ttk.Frame(nb)
         nb.add(self.tab_start, text="  학습 시작  ")
         nb.add(self.tab_ctrl, text="  실시간 관제  ")
         nb.add(self.tab_graph, text="  그래프  ")
+        nb.add(self.tab_view, text="  3D 보기 · 보고서  ")
         self.nb = nb
         self._build_start()
         self._build_ctrl()
         self._build_graph()
+        self._build_view()
         self.refresh_runs()
         self.after(500, self.tick)
         self.after(1500, self.graph_tick)
@@ -171,6 +174,13 @@ class Dashboard(tk.Tk):
                 "예) ppo.ent_coef=0.005\n    robot.link2_length=0.11\n    robot.motor_holding_torque=0.55")
         self.t_sets.grid(columnspan=3)
 
+        self.v_report_every = tk.IntVar(value=int(self.cfg["train"].get("report_every_episodes", 5000)))
+        labeled(f, 6, "보고서 주기 (판)", ttk.Spinbox(f, from_=0, to=1000000, increment=500,
+                                               textvariable=self.v_report_every, width=10),
+                "이 판(에피소드) 수마다 학습 보고서(HTML: 요약·KPI·차트·표·3D 장면)를 자동 생성하고\n"
+                "대표 에피소드를 3D 녹화. 0 = 끔. 학습 중에도 '실시간 관제' 탭에서 바꿀 수 있음.\n"
+                "참고: 초반 일어서기 단계는 판이 짧아(6초) 빨리 쌓이고, 후반은 판당 30~50초.")
+
         bf = ttk.Frame(self.tab_start)
         bf.pack(fill="x", padx=10)
         b = ttk.Button(bf, text="▶  학습 시작", command=self.start_training)
@@ -230,7 +240,9 @@ class Dashboard(tk.Tk):
             "preset": None if preset.startswith("(") else preset,
             "n_envs": envs, "max_hours": hours, "timesteps": steps,
             "resume": self.v_resume.get().strip() or None, "stage": stage, "fixed_stage": self.v_fixed.get(),
-            "device": self.v_device.get(), "sets": self.t_sets.get("1.0", "end").splitlines(),
+            "device": self.v_device.get(),
+            "sets": self.t_sets.get("1.0", "end").splitlines()
+            + [f"train.report_every_episodes={int(self.v_report_every.get())}"],
         }
         if params["resume"] and not os.path.exists(params["resume"]):
             messagebox.showerror("이어받기", f"체크포인트 파일이 없습니다:\n{params['resume']}")
@@ -271,7 +283,8 @@ class Dashboard(tk.Tk):
                 ("elapsed", "경과 시간", "이번 실행 시작 후 경과 시간"),
                 ("remaining", "남은 시간", "시간 제한까지 남은 시간"),
                 ("end", "종료 예정", "시간 제한 기준 종료 예정 시각 (이 PC 시각)"),
-                ("params", "엔트로피 / 학습률", "현재 적용 중인 PPO 엔트로피 계수와 학습률")]
+                ("params", "엔트로피 / 학습률", "현재 적용 중인 PPO 엔트로피 계수와 학습률"),
+                ("report", "보고서", "생성된 보고서 수와 다음 보고서 시점 (누적 판수 기준)")]
         for i, (k, lab, tip) in enumerate(rows):
             lb = ttk.Label(sf, text=lab)
             lb.grid(row=i, column=0, sticky="w", padx=8, pady=3)
@@ -305,7 +318,13 @@ class Dashboard(tk.Tk):
         labeled(cf, 2, "학습률", lf, "PPO 학습률. 보상이 출렁이거나 approx KL이 크면 낮춤 (예 1e-4).")
 
         bf = ttk.Frame(cf)
-        bf.grid(row=3, column=0, columnspan=2, sticky="w", pady=(10, 4), padx=4)
+        self.v_live_report = tk.StringVar()
+        rf2 = ttk.Frame(cf)
+        ttk.Entry(rf2, textvariable=self.v_live_report, width=12).pack(side="left")
+        ttk.Button(rf2, text="적용", command=self.apply_report_every).pack(side="left", padx=4)
+        ttk.Button(rf2, text="지금 보고서", command=self.report_now).pack(side="left")
+        labeled(cf, 3, "보고서 주기 (판)", rf2, "N판마다 자동 보고서 + 3D 녹화. 0 = 끔.\n'지금 보고서'는 즉시 한 번 생성.")
+        bf.grid(row=4, column=0, columnspan=2, sticky="w", pady=(10, 4), padx=4)
         b1 = ttk.Button(bf, text="지금 저장", command=self.save_now)
         b1.pack(side="left")
         Tooltip(b1, "현재 모델을 checkpoints\\step_*.zip 과 latest.zip 으로 즉시 저장")
@@ -315,7 +334,7 @@ class Dashboard(tk.Tk):
         b3 = ttk.Button(bf, text="결과 폴더 열기", command=self.open_run_dir)
         b3.pack(side="left")
         self.lbl_ctrl = ttk.Label(cf, text="", foreground="#52514e", wraplength=420)
-        self.lbl_ctrl.grid(row=4, column=0, columnspan=2, sticky="w", padx=4)
+        self.lbl_ctrl.grid(row=5, column=0, columnspan=2, sticky="w", padx=4)
 
         lf2 = ttk.LabelFrame(self.tab_ctrl, text="학습 로그 (최근)")
         lf2.pack(fill="both", expand=True, padx=10, pady=(4, 10))
@@ -334,6 +353,8 @@ class Dashboard(tk.Tk):
         self.current_run = name
         self._last_ctrl_run = None
         self.graph_tick(reschedule=False)
+        if hasattr(self, "lb_reports"):
+            self.refresh_view_lists()
 
     def run_dir(self):
         return os.path.join(be.RUNS_DIR, self.current_run) if self.current_run else None
@@ -376,6 +397,24 @@ class Dashboard(tk.Tk):
             return
         be.write_control(d, **{key: v})
         self.lbl_ctrl.config(text=f"{key} = {v:g} 요청")
+
+    def apply_report_every(self):
+        d = self._need_run()
+        if not d:
+            return
+        try:
+            v = int(float(self.v_live_report.get()))
+        except ValueError:
+            messagebox.showerror("입력 오류", "판 수(정수)를 입력하세요. 0 = 끔")
+            return
+        be.write_control(d, report_every_episodes=v)
+        self.lbl_ctrl.config(text=f"보고서 주기 {v:,}판 요청" if v > 0 else "자동 보고서 끔 요청")
+
+    def report_now(self):
+        d = self._need_run()
+        if d:
+            be.write_control(d, report_now=True)
+            self.lbl_ctrl.config(text="보고서 생성 요청됨 (녹화 후 1~2분 내 '3D 보기 · 보고서' 탭에 표시)")
 
     def save_now(self):
         d = self._need_run()
@@ -431,11 +470,15 @@ class Dashboard(tk.Tk):
             end = st.get("end_time")
             sv["end"].set(time.strftime("%m/%d %H:%M", time.localtime(end)) if end else "제한 없음")
             sv["params"].set(f"{st['ent_coef']:g} / {st['learning_rate']:g}")
+            nxt = st.get("next_report_at")
+            sv["report"].set(f"{st.get('reports', 0)}개 생성 · 현재 {st.get('total_episodes', 0):,}판"
+                             + (f" · 다음 {nxt:,}판" if nxt else " · 자동 보고서 꺼짐"))
             if self._last_ctrl_run != self.current_run:   # 실행을 바꾸면 입력칸을 현재 값으로 채움
                 self._last_ctrl_run = self.current_run
                 self.v_live_hours.set(st.get("max_hours", 0))
                 self.v_ent.set(f"{st['ent_coef']:g}")
                 self.v_lr.set(f"{st['learning_rate']:g}")
+                self.v_live_report.set(str(st.get("report_every_episodes", 0)))
         log = be.tail(os.path.join(d, "train.log"), 30)
         self.t_log.delete("1.0", "end")
         self.t_log.insert("end", log)
@@ -520,6 +563,198 @@ class Dashboard(tk.Tk):
         fig_dir = os.path.join(d, "figures")
         if os.name == "nt" and os.path.isdir(fig_dir):
             os.startfile(fig_dir)  # noqa: S606
+
+
+def _build_view(self):
+    import webbrowser
+    from spider_rl.replay import list_replays
+    self._webbrowser = webbrowser
+    self._list_replays = list_replays
+    t = self.tab_view
+    t.columnconfigure(0, weight=1)
+    t.columnconfigure(1, weight=1)
+    t.rowconfigure(0, weight=1)
+
+    lf = ttk.LabelFrame(t, text="학습 보고서 (N판마다 자동 생성)")
+    lf.grid(row=0, column=0, sticky="nsew", padx=(10, 5), pady=10)
+    self.lb_reports = tk.Listbox(lf, height=14)
+    self.lb_reports.pack(fill="both", expand=True, padx=6, pady=6)
+    self.lb_reports.bind("<Double-Button-1>", lambda _e: self.open_report())
+    bf = ttk.Frame(lf)
+    bf.pack(fill="x", padx=6, pady=(0, 6))
+    b = ttk.Button(bf, text="보고서 열기", command=self.open_report)
+    b.pack(side="left")
+    Tooltip(b, "선택한 보고서를 웹브라우저로 엶 (요약·KPI·3D 장면·차트·표가 한 파일에 들어 있음)")
+    ttk.Button(bf, text="전체 목록·추이", command=lambda: self.open_report(index=True)).pack(side="left", padx=4)
+    ttk.Button(bf, text="지금 보고서 만들기", command=self.report_now).pack(side="left")
+
+    rf = ttk.LabelFrame(t, text="3D 녹화 (보고서·실시간 관찰 때 자동 저장)")
+    rf.grid(row=0, column=1, sticky="nsew", padx=(5, 10), pady=10)
+    self.lb_replays = tk.Listbox(rf, height=14, selectmode="extended")
+    self.lb_replays.pack(fill="both", expand=True, padx=6, pady=6)
+    self.lb_replays.bind("<Double-Button-1>", lambda _e: self.play_replay())
+    bf2 = ttk.Frame(rf)
+    bf2.pack(fill="x", padx=6, pady=(0, 6))
+    for text, cmd, tip in [("3D 재생", self.play_replay, "선택한 녹화를 3D 창에서 재생 (여러 개 선택 시 PgUp/PgDn 으로 넘김)\n"
+                                                         "Space 일시정지, ←/→ 되감기·빨리감기, ↑/↓ 속도, Insert 카메라"),
+                           ("결과 재현", self.reproduce_replay, "녹화에 저장된 설정·시드·정책으로 다시 시뮬레이션해\n"
+                                                              "원본과 같은 결과가 나오는지 확인한 뒤 둘을 3D로 재생"),
+                           ("영상 저장", self.video_replay, "선택한 녹화를 mp4 로 저장 (보고서·발표용)")]:
+        bb = ttk.Button(bf2, text=text, command=cmd)
+        bb.pack(side="left", padx=(0, 4))
+        Tooltip(bb, tip)
+
+    lv = ttk.LabelFrame(t, text="정책 3D 실시간 관찰")
+    lv.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10))
+    self.v_view_stage = tk.StringVar(value=self.stage_names[0])
+    self.v_view_seed = tk.IntVar(value=0)
+    self.v_view_src = tk.StringVar(value="선택한 실행의 latest 체크포인트")
+    row = ttk.Frame(lv)
+    row.pack(fill="x", padx=6, pady=6)
+    cb = ttk.Combobox(row, textvariable=self.v_view_src, state="readonly", width=30,
+                      values=["선택한 실행의 latest 체크포인트", "기준선: 스크립트 일어서기", "기준선: 무작위 행동"])
+    cb.pack(side="left")
+    Tooltip(cb, "관찰할 정책. 학습 중이어도 마지막 저장된 체크포인트로 볼 수 있음")
+    ttk.Label(row, text="  단계").pack(side="left")
+    c2 = ttk.Combobox(row, textvariable=self.v_view_stage, state="readonly", values=self.stage_names, width=18)
+    c2.pack(side="left", padx=4)
+    Tooltip(c2, "어떤 커리큘럼 단계 환경(장애물·단차 포함 여부 등)에서 볼지")
+    ttk.Label(row, text="시드").pack(side="left")
+    ttk.Spinbox(row, from_=0, to=99999, textvariable=self.v_view_seed, width=7).pack(side="left", padx=4)
+    b = ttk.Button(row, text="3D로 보기", command=self.live_view)
+    b.pack(side="left", padx=8)
+    Tooltip(b, "MuJoCo 3D 창에서 정책을 실시간으로 실행. 판마다 녹화 파일이 자동 저장되어 나중에 재생·재현 가능.\n"
+               "PgDn 다음 판, Home 같은 시드로 다시, Space 일시정지, End 센서 광선·궤적 표시")
+    self.lbl_view = ttk.Label(lv, text="", foreground="#52514e")
+    self.lbl_view.pack(anchor="w", padx=6, pady=(0, 6))
+    self.after(2000, self.view_tick)
+
+
+def _view_tick(self):
+    try:
+        self.refresh_view_lists()
+    finally:
+        self.after(10000, self.view_tick)
+
+
+def _refresh_view_lists(self):
+    d = self.run_dir()
+    reps, plays = [], []
+    if d:
+        rd = os.path.join(d, "reports")
+        if os.path.isdir(rd):
+            reps = sorted([f for f in os.listdir(rd) if f.startswith("report_") and f.endswith(".html")], reverse=True)
+        plays = self._list_replays(d)
+    if reps != getattr(self, "_reps", None):
+        self._reps = reps
+        self.lb_reports.delete(0, "end")
+        for f in reps:
+            self.lb_reports.insert("end", f)
+    if plays != getattr(self, "_plays", None):
+        self._plays = plays
+        self.lb_replays.delete(0, "end")
+        for f in plays:
+            self.lb_replays.insert("end", os.path.basename(f))
+
+
+def _open_report(self, index=False):
+    d = self.run_dir()
+    if not d:
+        return
+    if index:
+        p = os.path.join(d, "reports", "index.html")
+    else:
+        sel = self.lb_reports.curselection()
+        if not sel and self._reps:
+            sel = (0,)
+        if not sel:
+            messagebox.showinfo("보고서", "아직 보고서가 없습니다. '지금 보고서 만들기'를 누르거나 주기를 기다리세요.")
+            return
+        p = os.path.join(d, "reports", self._reps[sel[0]])
+    if os.path.exists(p):
+        self._webbrowser.open("file:///" + os.path.abspath(p).replace(os.sep, "/"))
+
+
+def _selected_replays(self):
+    sel = self.lb_replays.curselection()
+    if not sel and self._plays:
+        sel = (0,)
+    return [self._plays[i] for i in sel]
+
+
+def _viewer(self, args, wait_output=False, done=None):
+    cmd = [sys.executable, os.path.join(ROOT, "scripts", "viewer3d.py")] + args
+    if not wait_output:
+        subprocess.Popen(cmd, cwd=ROOT)
+        return
+    import threading
+
+    def work():
+        r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.after(0, lambda: done(r))
+    threading.Thread(target=work, daemon=True).start()
+
+
+def _play_replay(self):
+    files = self._selected_replays()
+    if files:
+        self._viewer(["replay"] + files)
+        self.lbl_view.config(text=f"3D 재생: {len(files)}개 파일")
+
+
+def _reproduce_replay(self):
+    files = self._selected_replays()
+    if not files:
+        return
+    f = files[0]
+    self.lbl_view.config(text="재현 시뮬레이션 중...")
+
+    def done(r):
+        lines = [ln for ln in r.stdout.splitlines() if ln.startswith("[재현")]
+        msg = "\n".join(lines) or r.stderr[-1500:]
+        self.lbl_view.config(text=lines[0] if lines else "재현 실패")
+        messagebox.showinfo("결과 재현", msg)
+        rp = f.replace(".npz", "_reproduced.npz")
+        if os.path.exists(rp):
+            self._viewer(["replay", f, rp])
+    self._viewer(["reproduce", f, "--no-view"], wait_output=True, done=done)
+
+
+def _video_replay(self):
+    files = self._selected_replays()
+    if not files:
+        return
+    self.lbl_view.config(text="영상 저장 중...")
+
+    def done(r):
+        lines = [ln for ln in r.stdout.splitlines() if ln.startswith("[영상")]
+        self.lbl_view.config(text=lines[-1] if lines else ("영상 저장 실패: " + r.stderr[-300:]))
+    self._viewer(["video", files[0], "--camera", "track"], wait_output=True, done=done)
+
+
+def _live_view(self):
+    src = self.v_view_src.get()
+    stage = self.v_view_stage.get().split(":")[0]
+    args = ["live", "--stage", stage, "--seed", str(int(self.v_view_seed.get()))]
+    if src.startswith("선택한"):
+        d = self.run_dir()
+        ck = be.latest_checkpoint(d) if d else None
+        if not ck:
+            messagebox.showinfo("3D 보기", "선택한 실행에 아직 체크포인트(latest.zip)가 없습니다.\n"
+                                         "'실시간 관제' 탭에서 '지금 저장'을 누르거나 기준선 정책을 고르세요.")
+            return
+        args += ["--checkpoint", ck]
+    else:
+        args += ["--policy", "stand" if "일어서기" in src else "random"]
+    self._viewer(args)
+    self.lbl_view.config(text="3D 창을 여는 중... (창을 닫으면 종료)")
+
+
+for _n, _f in [("_build_view", _build_view), ("view_tick", _view_tick), ("refresh_view_lists", _refresh_view_lists),
+               ("open_report", _open_report), ("_selected_replays", _selected_replays), ("_viewer", _viewer),
+               ("play_replay", _play_replay), ("reproduce_replay", _reproduce_replay),
+               ("video_replay", _video_replay), ("live_view", _live_view)]:
+    setattr(Dashboard, _n, _f)
 
 
 def main():

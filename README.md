@@ -35,6 +35,9 @@ Windows 학교 PC(재부팅 시 초기화)는 [USB 휴대형 환경](#windows-�
 | `scripts/plot_report.py` | 학습 로그 → 보고서 그래프 30여 종, 여러 실행 비교 |
 | `scripts/analyze_robot.py` | 설계 검토: 질량 예산, 지상고, 무릎 토크 여유, 일어서기 속도별 탈조 |
 | `scripts/dashboard.py` | 학습 관제 GUI: 학습 시작·이어받기, 실시간 상태, 학습 중 설정 변경, 실시간 그래프 |
+| `scripts/viewer3d.py` | 3D 시각화: 정책 실시간 관찰, 녹화 재생(일시정지·되감기·배속), 결과 재현, mp4 내보내기 |
+| `scripts/make_report.py` | N판마다 자동 생성되는 학습 보고서(HTML: 요약·KPI·3D 장면·차트·표) |
+| `spider_rl/replay.py` | 에피소드 녹화 파일(.npz) 저장·불러오기·재현 |
 | `scripts/view_model.py` | MuJoCo 뷰어로 모델·정책 확인, MJCF 내보내기 |
 | `windows/*.bat` | 휴대형 Python 설치, 학습, TensorBoard, 그래프 실행용 배치 파일 |
 | `docs/robot_analysis/` | `analyze_robot.py` 결과 (토크 표, 그래프) |
@@ -111,6 +114,39 @@ Windows 학교 PC(재부팅 시 초기화)는 [USB 휴대형 환경](#windows-�
 학습은 대시보드와 별개 프로세스라 대시보드를 닫아도 계속되고, 다시 열면 이어서 관제합니다.
 학습과는 실행 폴더의 `control.json`(대시보드 → 학습, 3초마다 확인)과 `status.json`(학습 → 대시보드)으로 통신하며,
 학습 중 바꾼 설정은 `control_events.csv` 에 기록됩니다(보고서에 '설정 변경 시점' 표시용).
+
+## 3D 시각화와 결과 재현
+
+```bash
+# 학습된 정책을 3D 창에서 실시간 관찰 (판마다 녹화 파일이 runs/<실행>/replays/ 에 자동 저장)
+python scripts/viewer3d.py live --checkpoint runs/<실행>/checkpoints/latest.zip --stage 5
+# 녹화 재생 (여러 개면 PgUp/PgDn 으로 넘김)
+python scripts/viewer3d.py replay runs/<실행>/replays/*.npz
+# 결과 재현: 녹화에 저장된 설정·시드·정책으로 다시 시뮬레이션 → 원본과 자세 오차 비교 → 둘 다 재생
+python scripts/viewer3d.py reproduce runs/<실행>/replays/<파일>.npz
+# mp4 내보내기 (track / side / top 카메라)
+python scripts/viewer3d.py video runs/<실행>/replays/<파일>.npz --camera top
+```
+
+3D 창 조작: Space 일시정지, ←/→ 1초 되감기·빨리감기(일시정지 중엔 한 프레임), ↑/↓ 속도 2배·절반,
+Home 처음부터, PgUp/PgDn 이전·다음, Insert 카메라(추적 → 자유 → 위에서), End 거리센서 광선·이동 궤적 표시.
+마우스: 왼쪽 드래그 회전, 오른쪽 드래그 이동, 휠 확대.
+
+녹화 파일에는 매 스텝 자세, 경기장 배치, 센서·관절·토크·접지·보상 시계열, 설정, 시드, 정책 경로가 들어 있어
+물리 계산 없이 정확히 같은 장면을 재생하고, 같은 조건으로 다시 돌려 결과가 같은지 확인할 수 있습니다
+(같은 PC에서는 자세 오차 0으로 재현됨).
+
+## 자동 학습 보고서
+
+`train.report_every_episodes` (기본 5000판, 대시보드에서 학습 중에도 변경)마다:
+1. 현재 정책으로 대표 에피소드 1판을 3D 녹화하고 재현용 체크포인트(`report_XXXX.zip`) 저장
+2. 별도 프로세스에서 `runs/<실행>/reports/report_XXXX_epN.html` 생성 (학습은 멈추지 않음)
+
+보고서 한 파일에 이미지가 모두 들어 있어 그대로 공유할 수 있습니다:
+한 문단 요약(성공률 변화, 승급까지 남은 정도), KPI 카드(지난 보고서 대비 증감), 3D 장면 4컷 + 위에서 본 이동 궤적,
+보행 패턴·관절 궤적·몸체 높이·보상 누적, 학습 곡선, 보상 분해, 구간 단계별 결과 표, 보고서별 추이,
+성공률 히트맵, PPO 지표, 커리큘럼 이벤트, 학습 중 설정 변경 기록, 3D 재생·재현 명령.
+`reports/index.html` 은 전체 보고서 목록과 추이입니다. 직접 만들려면 `python scripts/make_report.py runs/<실행>`.
 
 ## 로그와 보고서 그래프
 
